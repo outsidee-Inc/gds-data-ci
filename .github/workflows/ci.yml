@@ -1,0 +1,16 @@
+name: Build
+
+on:
+  repository_dispatch:
+    types: [private-repo-push]
+
+jobs:
+  Build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          repository: outsidee-Inc/gds-data
+          token: ${{ secrets.GDS_DATA }}
+          path: src
