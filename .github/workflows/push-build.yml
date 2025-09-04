@@ -1,0 +1,37 @@
+name: Push Build
+
+on:
+  repository_dispatch:
+    types: [push-build]
+
+jobs:
+  Build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          repository: outsidee-Inc/gds-data
+          token: ${{ secrets.GDS_DATA }}
+          path: src
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set Rust caching env vars only on non-release runs
+        if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
+          echo "RUST_LOG=debug" >> $GITHUB_ENV
+          echo "DUCKDB_BUILD_CACHE=1" >> $GITHUB_ENV
+        
+      - name: Build gds data
+        run: cargo build --no-bundle
+        working-directory: src
