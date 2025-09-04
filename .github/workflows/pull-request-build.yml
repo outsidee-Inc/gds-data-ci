@@ -34,12 +34,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         continue-on-error: true
 
-      - name: Set Rust caching env vars only on non-release runs
+      - name: Set build env vars
         id: set-cache-env
-        if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
         run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
           echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
           echo "RUST_LOG=debug" >> $GITHUB_ENV
           echo "DUCKDB_BUILD_CACHE=1" >> $GITHUB_ENV
@@ -129,23 +126,30 @@ jobs:
       - name: Set Windows build result
         id: set-windows-result
         if: always() && matrix.os == 'windows-latest'
+        shell: pwsh
         run: |
-          BASIC_ENV_RESULT="${{ steps.set-basic-env-result-windows.outputs.result }}"
-          BUILD_RESULT="${{ steps.build-windows.outcome }}"
+          $BASIC_ENV_RESULT = "${{ steps.set-basic-env-result-windows.outputs.result }}"
+          $BUILD_RESULT = "${{ steps.build-windows.outcome }}"
           
-          if [ "$BASIC_ENV_RESULT" != "success" ]; then
-            echo "result=skipped" >> $GITHUB_OUTPUT
-            echo "Windows build skipped due to basic environment failure"
-          elif [ "$BUILD_RESULT" = "success" ]; then
-            echo "result=success" >> $GITHUB_OUTPUT
-            echo "Windows build completed successfully"
-          elif [ "$BUILD_RESULT" = "failure" ]; then
-            echo "result=failure" >> $GITHUB_OUTPUT
-            echo "Windows build failed"
-          else
-            echo "result=unknown" >> $GITHUB_OUTPUT
-            echo "Windows build status unknown"
-          fi
+          Write-Host "Basic Env Result: $BASIC_ENV_RESULT"
+          Write-Host "Build Result: $BUILD_RESULT"
+          
+          if ($BASIC_ENV_RESULT -ne "success") {
+            "result=skipped" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Windows build skipped due to basic environment failure"
+          }
+          elseif ($BUILD_RESULT -eq "success") {
+            "result=success" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Windows build completed successfully"
+          }
+          elseif ($BUILD_RESULT -eq "failure") {
+            "result=failure" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Windows build failed"
+          }
+          else {
+            "result=unknown" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Windows build status unknown"
+          }
 
       - name: Build gds data on linux
         id: build-linux
@@ -187,8 +191,6 @@ jobs:
       - name: Comment PR with detailed results
         shell: bash
         run: |
-          gh auth setup-git --with-token <<< "${{ secrets.GDS_DATA }}"
-          
           LINUX_ENV_RESULT="${{ needs.build.outputs.linux-env-result }}"
           WINDOWS_ENV_RESULT="${{ needs.build.outputs.windows-env-result }}"
           LINUX_BUILD_RESULT="${{ needs.build.outputs.linux-build-result }}"
