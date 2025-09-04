@@ -42,7 +42,7 @@ jobs:
           echo "DUCKDB_BUILD_CACHE=1" >> $GITHUB_ENV
         continue-on-error: true
         
-      - name: Set basic environment result
+      - name: Set basic environment result Linux
         id: set-basic-env-result-linux
         if: always() && runner.os == 'Linux'
         shell: bash
@@ -63,7 +63,7 @@ jobs:
             echo "Basic environment setup failed"
           fi
 
-      - name: Set basic environment result
+      - name: Set basic environment result Windows
         id: set-basic-env-result-windows
         if: always() && runner.os == 'Windows'
         shell: pwsh
@@ -264,5 +264,6 @@ jobs:
           fi
 
           echo "$COMMENT_BODY" | gh pr comment ${{ github.event.client_payload.pr_number }} --body-file -
+        working-directory: src
         env:
           GH_TOKEN: ${{ secrets.GDS_DATA }}
