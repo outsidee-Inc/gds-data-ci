@@ -188,6 +188,13 @@ jobs:
       pull-requests: write
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          repository: outsidee-Inc/gds-data
+          token: ${{ secrets.GDS_DATA }}
+          path: src
+
       - name: Comment PR with detailed results
         shell: bash
         run: |
