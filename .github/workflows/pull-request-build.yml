@@ -10,7 +10,8 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     outputs:
-      basic-env-result: ${{ steps.set-basic-env-result.outputs.result }}
+      linux-env-result: ${{ matrix.os == 'ubuntu-latest' && steps.set-basic-env-result-linux.outputs.result || 'skipped' }}
+      windows-env-result: ${{ matrix.os == 'windows-latest' && steps.set-basic-env-result-windows.outputs.result || 'skipped' }}
       linux-build-result: ${{ steps.set-linux-result.outputs.result }}
       windows-build-result: ${{ steps.set-windows-result.outputs.result }}
 
@@ -45,8 +46,9 @@ jobs:
         continue-on-error: true
         
       - name: Set basic environment result
-        id: set-basic-env-result
-        if: always()
+        id: set-basic-env-result-linux
+        if: always() && runner.os == 'Linux'
+        shell: bash
         run: |
           CHECKOUT_STATUS="${{ steps.checkout.outcome }}"
           RUST_STATUS="${{ steps.install-rust.outcome }}"
@@ -56,13 +58,34 @@ jobs:
           echo "Install Rust: $RUST_STATUS"  
           echo "Set Cache Env: $CACHE_ENV_STATUS"
           
-          if [ "$CHECKOUT_STATUS" = "success" ] && [ "$RUST_STATUS" = "success" ] && [ "$PR_ENV_STATUS" = "success" ]; then
+          if [ "$CHECKOUT_STATUS" = "success" ] && [ "$RUST_STATUS" = "success" ] && [ "$CACHE_ENV_STATUS" = "success" ]; then
             echo "result=success" >> $GITHUB_OUTPUT
             echo "Basic environment setup completed successfully"
           else
             echo "result=failure" >> $GITHUB_OUTPUT
             echo "Basic environment setup failed"
           fi
+
+      - name: Set basic environment result
+        id: set-basic-env-result-windows
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $CHECKOUT_STATUS = "${{ steps.checkout.outcome }}"
+          $RUST_STATUS = "${{ steps.install-rust.outcome }}"
+          $CACHE_ENV_STATUS = "${{ steps.set-cache-env.outcome }}"
+          
+          Write-Host "Checkout: $CHECKOUT_STATUS"
+          Write-Host "Install Rust: $RUST_STATUS"
+          Write-Host "Set Cache Env: $CACHE_ENV_STATUS"
+          
+          if (($CHECKOUT_STATUS -eq "success") -and ($RUST_STATUS -eq "success") -and ($CACHE_ENV_STATUS -eq "success")) {
+            "result=success" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Basic environment setup completed successfully"
+          } else {
+            "result=failure" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Basic environment setup failed"
+          }
         
       # windows
       - uses: robinraju/release-downloader@v1.4
@@ -95,7 +118,7 @@ jobs:
 
       - name: Build gds data on windows
         id: build-windows
-        if: matrix.os == 'windows-latest' && steps.set-basic-env-result.outputs.result == 'success'
+        if: matrix.os == 'windows-latest' && steps.set-basic-env-result-windows.outputs.result == 'success'
         run: cargo build
         working-directory: src
         continue-on-error: true
@@ -107,7 +130,7 @@ jobs:
         id: set-windows-result
         if: always() && matrix.os == 'windows-latest'
         run: |
-          BASIC_ENV_RESULT="${{ steps.set-basic-env-result.outputs.result }}"
+          BASIC_ENV_RESULT="${{ steps.set-basic-env-result-windows.outputs.result }}"
           BUILD_RESULT="${{ steps.build-windows.outcome }}"
           
           if [ "$BASIC_ENV_RESULT" != "success" ]; then
@@ -126,7 +149,7 @@ jobs:
 
       - name: Build gds data on linux
         id: build-linux
-        if: matrix.os == 'ubuntu-latest' && steps.set-basic-env-result.outputs.result == 'success'
+        if: matrix.os == 'ubuntu-latest' && steps.set-basic-env-result-linux.outputs.result == 'success'
         run: cargo build
         working-directory: src
         continue-on-error: true
@@ -135,7 +158,7 @@ jobs:
         id: set-linux-result
         if: always() && matrix.os == 'ubuntu-latest'
         run: |
-          BASIC_ENV_RESULT="${{ steps.set-basic-env-result.outputs.result }}"
+          BASIC_ENV_RESULT="${{ steps.set-basic-env-result-linux.outputs.result }}"
           BUILD_RESULT="${{ steps.build-linux.outcome }}"
           
           if [ "$BASIC_ENV_RESULT" != "success" ]; then
@@ -157,19 +180,30 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
 
+    permissions:
+      pull-requests: write
+
     steps:
       - name: Comment PR with detailed results
+        shell: bash
         run: |
-          BASIC_ENV_RESULT="${{ needs.build.outputs.basic-env-result }}"
+          gh auth setup-git --with-token <<< "${{ secrets.GDS_DATA }}"
+          
+          LINUX_ENV_RESULT="${{ needs.build.outputs.linux-env-result }}"
+          WINDOWS_ENV_RESULT="${{ needs.build.outputs.windows-env-result }}"
           LINUX_BUILD_RESULT="${{ needs.build.outputs.linux-build-result }}"
           WINDOWS_BUILD_RESULT="${{ needs.build.outputs.windows-build-result }}"
           
-          echo "Basic Env: $BASIC_ENV_RESULT"
+          echo "Linux Env: $LINUX_ENV_RESULT"
+          echo "Windows Env: $WINDOWS_ENV_RESULT"
           echo "Linux Build: $LINUX_BUILD_RESULT"
           echo "Windows Build: $WINDOWS_BUILD_RESULT"
           
-          if [ "$BASIC_ENV_RESULT" = "success" ]; then
+          # Determine overall environment status
+          if [ "$LINUX_ENV_RESULT" = "success" ] && [ "$WINDOWS_ENV_RESULT" = "success" ]; then
             BASIC_ENV_STATUS="✅ **Basic Environment**: Setup Successful"
+          elif [ "$LINUX_ENV_RESULT" = "skipped" ] || [ "$WINDOWS_ENV_RESULT" = "skipped" ]; then
+            BASIC_ENV_STATUS="⚠️ **Basic Environment**: Partially Skipped"
           else
             BASIC_ENV_STATUS="❌ **Basic Environment**: Setup Failed"
           fi
@@ -194,10 +228,10 @@ jobs:
             WINDOWS_BUILD_STATUS="❓ **Windows Build**: Status Unknown"
           fi
           
-          if [ "$BASIC_ENV_RESULT" = "success" ] && [ "$LINUX_BUILD_RESULT" = "success" ] && [ "$WINDOWS_BUILD_RESULT" = "success" ]; then
+          if [ "$LINUX_ENV_RESULT" = "success" ] && [ "$WINDOWS_ENV_RESULT" = "success" ] && [ "$LINUX_BUILD_RESULT" = "success" ] && [ "$WINDOWS_BUILD_RESULT" = "success" ]; then
             OVERALL_STATUS="🎉 **CI Overall Status: All Successful**"
             STATUS_EMOJI="🎉"
-          elif [ "$BASIC_ENV_RESULT" != "success" ]; then
+          elif [ "$LINUX_ENV_RESULT" != "success" ] || [ "$WINDOWS_ENV_RESULT" != "success" ]; then
             OVERALL_STATUS="💥 **CI Overall Status: Basic Environment Failed**"
             STATUS_EMOJI="💥"
           else
@@ -206,8 +240,9 @@ jobs:
           fi
           
           CI_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          CURRENT_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
           
-          gh pr comment ${{ github.event.client_payload.pr_number }} --body "$STATUS_EMOJI $OVERALL_STATUS
+          COMMENT_BODY="$STATUS_EMOJI $OVERALL_STATUS
 
           ## 📋 Detailed Results
 
@@ -218,9 +253,14 @@ jobs:
 
           ### 📊 Execution Information
           - 🔗 **Detailed Log**: [CI Execution Log #${{ github.run_number }}]($CI_URL)
-          - ⏰ **Execution Time**: $(date '+%Y-%m-%d %H:%M:%S UTC')
+          - ⏰ **Execution Time**: $CURRENT_TIME"
 
-          $(if [ "$BASIC_ENV_RESULT" != "success" ]; then echo "
-          > ⚠️  **Note**: Linux and Windows builds have been skipped due to basic environment setup failure. Please check the basic environment configuration and re-run CI."; fi)"
+          if [ "$LINUX_ENV_RESULT" != "success" ] || [ "$WINDOWS_ENV_RESULT" != "success" ]; then
+            COMMENT_BODY="$COMMENT_BODY
+
+          > ⚠️  **Note**: Some builds have been skipped due to environment setup failures. Please check the environment configuration and re-run CI."
+          fi
+
+          echo "$COMMENT_BODY" | gh pr comment ${{ github.event.client_payload.pr_number }} --body-file -
         env:
-          GITHUB_TOKEN: ${{ secrets.GDS_DATA }}
+          GH_TOKEN: ${{ secrets.GDS_DATA }}
