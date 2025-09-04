@@ -2,7 +2,7 @@ name: Build
 
 on:
   repository_dispatch:
-    types: [push-build]
+    types: [push-build, push-excel-process, pull-request-build]
 
 jobs:
   Build:
