@@ -2,7 +2,7 @@ name: Build
 
 on:
   repository_dispatch:
-    types: [private-repo-push]
+    types: [push-build]
 
 jobs:
   Build:
