@@ -1,6 +1,7 @@
 name: Pull Request Build
 
 on:
+  workflow_dispatch:
   repository_dispatch:
     types: [pull-request-build]
 
@@ -33,5 +34,5 @@ jobs:
           echo "DUCKDB_BUILD_CACHE=1" >> $GITHUB_ENV
         
       - name: Build gds data
-        run: cargo build --no-bundle
+        run: cargo build
         working-directory: src
