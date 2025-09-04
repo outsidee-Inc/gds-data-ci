@@ -9,22 +9,32 @@ jobs:
   Build:
     runs-on: ${{ matrix.os }}
 
+    outputs:
+      basic-env-result: ${{ steps.set-basic-env-result.outputs.result }}
+      linux-build-result: ${{ steps.set-linux-result.outputs.result }}
+      windows-build-result: ${{ steps.set-windows-result.outputs.result }}
+
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout repository
+        id: checkout
         uses: actions/checkout@v5
         with:
           repository: outsidee-Inc/gds-data
           token: ${{ secrets.GDS_DATA }}
           path: src
+        continue-on-error: true
       
       - name: Install Rust
+        id: install-rust
         uses: dtolnay/rust-toolchain@stable
+        continue-on-error: true
 
       - name: Set Rust caching env vars only on non-release runs
+        id: set-cache-env
         if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
         run: |
           echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
@@ -32,39 +42,185 @@ jobs:
           echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
           echo "RUST_LOG=debug" >> $GITHUB_ENV
           echo "DUCKDB_BUILD_CACHE=1" >> $GITHUB_ENV
+        continue-on-error: true
+        
+      - name: Set basic environment result
+        id: set-basic-env-result
+        if: always()
+        run: |
+          CHECKOUT_STATUS="${{ steps.checkout.outcome }}"
+          RUST_STATUS="${{ steps.install-rust.outcome }}"
+          CACHE_ENV_STATUS="${{ steps.set-cache-env.outcome }}"
+          
+          echo "Checkout: $CHECKOUT_STATUS"
+          echo "Install Rust: $RUST_STATUS"  
+          echo "Set Cache Env: $CACHE_ENV_STATUS"
+          
+          if [ "$CHECKOUT_STATUS" = "success" ] && [ "$RUST_STATUS" = "success" ] && [ "$PR_ENV_STATUS" = "success" ]; then
+            echo "result=success" >> $GITHUB_OUTPUT
+            echo "Basic environment setup completed successfully"
+          else
+            echo "result=failure" >> $GITHUB_OUTPUT
+            echo "Basic environment setup failed"
+          fi
         
       # windows
       - uses: robinraju/release-downloader@v1.4
+        id: download-duckdb
         name: Download duckdb
         with:
           repository: "duckdb/duckdb"
           tag: "v1.3.2"
           fileName: libduckdb-windows-amd64.zip
           out-file-path: .
+        continue-on-error: true
 
       - name: Windows extract duckdb
+        id: extract-duckdb
         if: matrix.os == 'windows-latest'
         uses: DuckSoft/extract-7z-action@v1.0
         with:
           pathSource: D:\a\gds-data-ci\gds-data-ci\libduckdb-windows-amd64.zip
           pathTarget: ${{ github.workspace }}/libduckdb
+        continue-on-error: true
 
       - name: Add path to PATH environment variable
+        id: add-path
         if: matrix.os == 'windows-latest'
         uses: myci-actions/export-env-var-powershell@1
         with:
           name: PATH
           value: $env:PATH;${{ github.workspace }}/libduckdb
+        continue-on-error: true
 
       - name: Build gds data on windows
-        if: matrix.os == 'windows-latest'
+        id: build-windows
+        if: matrix.os == 'windows-latest' && steps.set-basic-env-result.outputs.result == 'success'
         run: cargo build
         working-directory: src
+        continue-on-error: true
         env:
           DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
           DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
       
+      - name: Set Windows build result
+        id: set-windows-result
+        if: always() && matrix.os == 'windows-latest'
+        run: |
+          BASIC_ENV_RESULT="${{ steps.set-basic-env-result.outputs.result }}"
+          BUILD_RESULT="${{ steps.build-windows.outcome }}"
+          
+          if [ "$BASIC_ENV_RESULT" != "success" ]; then
+            echo "result=skipped" >> $GITHUB_OUTPUT
+            echo "Windows build skipped due to basic environment failure"
+          elif [ "$BUILD_RESULT" = "success" ]; then
+            echo "result=success" >> $GITHUB_OUTPUT
+            echo "Windows build completed successfully"
+          elif [ "$BUILD_RESULT" = "failure" ]; then
+            echo "result=failure" >> $GITHUB_OUTPUT
+            echo "Windows build failed"
+          else
+            echo "result=unknown" >> $GITHUB_OUTPUT
+            echo "Windows build status unknown"
+          fi
+
       - name: Build gds data on linux
-        if: matrix.os == 'ubuntu-latest'
+        id: build-linux
+        if: matrix.os == 'ubuntu-latest' && steps.set-basic-env-result.outputs.result == 'success'
         run: cargo build
         working-directory: src
+        continue-on-error: true
+
+      - name: Set Linux build result
+        id: set-linux-result
+        if: always() && matrix.os == 'ubuntu-latest'
+        run: |
+          BASIC_ENV_RESULT="${{ steps.set-basic-env-result.outputs.result }}"
+          BUILD_RESULT="${{ steps.build-linux.outcome }}"
+          
+          if [ "$BASIC_ENV_RESULT" != "success" ]; then
+            echo "result=skipped" >> $GITHUB_OUTPUT
+            echo "Linux build skipped due to basic environment failure"
+          elif [ "$BUILD_RESULT" = "success" ]; then
+            echo "result=success" >> $GITHUB_OUTPUT
+            echo "Linux build completed successfully"
+          elif [ "$BUILD_RESULT" = "failure" ]; then
+            echo "result=failure" >> $GITHUB_OUTPUT
+            echo "Linux build failed"
+          else
+            echo "result=unknown" >> $GITHUB_OUTPUT
+            echo "Linux build status unknown"
+          fi
+
+  Comment:
+    needs: Build
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Comment PR with detailed results
+        run: |
+          BASIC_ENV_RESULT="${{ needs.build.outputs.basic-env-result }}"
+          LINUX_BUILD_RESULT="${{ needs.build.outputs.linux-build-result }}"
+          WINDOWS_BUILD_RESULT="${{ needs.build.outputs.windows-build-result }}"
+          
+          echo "Basic Env: $BASIC_ENV_RESULT"
+          echo "Linux Build: $LINUX_BUILD_RESULT"
+          echo "Windows Build: $WINDOWS_BUILD_RESULT"
+          
+          if [ "$BASIC_ENV_RESULT" = "success" ]; then
+            BASIC_ENV_STATUS="✅ **Basic Environment**: Setup Successful"
+          else
+            BASIC_ENV_STATUS="❌ **Basic Environment**: Setup Failed"
+          fi
+          
+          if [ "$LINUX_BUILD_RESULT" = "success" ]; then
+            LINUX_BUILD_STATUS="✅ **Linux Build**: Build Successful"
+          elif [ "$LINUX_BUILD_RESULT" = "failure" ]; then
+            LINUX_BUILD_STATUS="❌ **Linux Build**: Build Failed"
+          elif [ "$LINUX_BUILD_RESULT" = "skipped" ]; then
+            LINUX_BUILD_STATUS="⏭️ **Linux Build**: Build Skipped (Basic Environment Failed)"
+          else
+            LINUX_BUILD_STATUS="❓ **Linux Build**: Status Unknown"
+          fi
+          
+          if [ "$WINDOWS_BUILD_RESULT" = "success" ]; then
+            WINDOWS_BUILD_STATUS="✅ **Windows Build**: Build Successful"
+          elif [ "$WINDOWS_BUILD_RESULT" = "failure" ]; then
+            WINDOWS_BUILD_STATUS="❌ **Windows Build**: Build Failed"
+          elif [ "$WINDOWS_BUILD_RESULT" = "skipped" ]; then
+            WINDOWS_BUILD_STATUS="⏭️ **Windows Build**: Build Skipped (Basic Environment Failed)"
+          else
+            WINDOWS_BUILD_STATUS="❓ **Windows Build**: Status Unknown"
+          fi
+          
+          if [ "$BASIC_ENV_RESULT" = "success" ] && [ "$LINUX_BUILD_RESULT" = "success" ] && [ "$WINDOWS_BUILD_RESULT" = "success" ]; then
+            OVERALL_STATUS="🎉 **CI Overall Status: All Successful**"
+            STATUS_EMOJI="🎉"
+          elif [ "$BASIC_ENV_RESULT" != "success" ]; then
+            OVERALL_STATUS="💥 **CI Overall Status: Basic Environment Failed**"
+            STATUS_EMOJI="💥"
+          else
+            OVERALL_STATUS="⚠️ **CI Overall Status: Partially Failed**"
+            STATUS_EMOJI="⚠️"
+          fi
+          
+          CI_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+          gh pr comment ${{ github.event.client_payload.pr_number }} --body "$STATUS_EMOJI $OVERALL_STATUS
+
+          ## 📋 Detailed Results
+
+          ### 🔧 Stage Status
+          $BASIC_ENV_STATUS
+          $LINUX_BUILD_STATUS  
+          $WINDOWS_BUILD_STATUS
+
+          ### 📊 Execution Information
+          - 🔗 **Detailed Log**: [CI Execution Log #${{ github.run_number }}]($CI_URL)
+          - ⏰ **Execution Time**: $(date '+%Y-%m-%d %H:%M:%S UTC')
+
+          $(if [ "$BASIC_ENV_RESULT" != "success" ]; then echo "
+          > ⚠️  **Note**: Linux and Windows builds have been skipped due to basic environment setup failure. Please check the basic environment configuration and re-run CI."; fi)"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GDS_DATA }}

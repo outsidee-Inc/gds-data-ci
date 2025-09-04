@@ -31,7 +31,7 @@ jobs:
           echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
           echo "RUST_LOG=debug" >> $GITHUB_ENV
           echo "DUCKDB_BUILD_CACHE=1" >> $GITHUB_ENV
-
+        
       # windows
       - uses: robinraju/release-downloader@v1.4
         name: Download duckdb
@@ -45,7 +45,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         uses: DuckSoft/extract-7z-action@v1.0
         with:
-          pathSource: D:\a\duckdb-rs\duckdb-rs\libduckdb-windows-amd64.zip
+          pathSource: D:\a\gds-data-ci\gds-data-ci\libduckdb-windows-amd64.zip
           pathTarget: ${{ github.workspace }}/libduckdb
 
       - name: Add path to PATH environment variable
