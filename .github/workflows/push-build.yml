@@ -31,7 +31,39 @@ jobs:
           echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
           echo "RUST_LOG=debug" >> $GITHUB_ENV
           echo "DUCKDB_BUILD_CACHE=1" >> $GITHUB_ENV
-        
-      - name: Build gds data
-        run: cargo build --no-bundle
+
+      # windows
+      - uses: robinraju/release-downloader@v1.4
+        name: Download duckdb
+        with:
+          repository: "duckdb/duckdb"
+          tag: "v1.3.2"
+          fileName: libduckdb-windows-amd64.zip
+          out-file-path: .
+
+      - name: Windows extract duckdb
+        if: matrix.os == 'windows-latest'
+        uses: DuckSoft/extract-7z-action@v1.0
+        with:
+          pathSource: D:\a\duckdb-rs\duckdb-rs\libduckdb-windows-amd64.zip
+          pathTarget: ${{ github.workspace }}/libduckdb
+
+      - name: Add path to PATH environment variable
+        if: matrix.os == 'windows-latest'
+        uses: myci-actions/export-env-var-powershell@1
+        with:
+          name: PATH
+          value: $env:PATH;${{ github.workspace }}/libduckdb
+
+      - name: Build gds data on windows
+        if: matrix.os == 'windows-latest'
+        run: cargo build
+        working-directory: src
+        env:
+          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
+          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
+      
+      - name: Build gds data on linux
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo build
         working-directory: src
