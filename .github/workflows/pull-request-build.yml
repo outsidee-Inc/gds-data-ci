@@ -209,12 +209,13 @@ jobs:
           echo "Windows Build: $WINDOWS_BUILD_RESULT"
           
           # Determine overall environment status
-          if [ "$LINUX_ENV_RESULT" = "success" ] && [ "$WINDOWS_ENV_RESULT" = "success" ]; then
-            BASIC_ENV_STATUS="✅ **Basic Environment**: Setup Successful"
-          elif [ "$LINUX_ENV_RESULT" = "skipped" ] || [ "$WINDOWS_ENV_RESULT" = "skipped" ]; then
-            BASIC_ENV_STATUS="⚠️ **Basic Environment**: Partially Skipped"
-          else
+          if [ "$LINUX_ENV_RESULT" != "success" ] && [ "$LINUX_ENV_RESULT" != "skipped" ] || \
+             [ "$WINDOWS_ENV_RESULT" != "success" ] && [ "$WINDOWS_ENV_RESULT" != "skipped" ]; then
             BASIC_ENV_STATUS="❌ **Basic Environment**: Setup Failed"
+          elif [ "$LINUX_ENV_RESULT" = "success" ] && [ "$WINDOWS_ENV_RESULT" = "success" ]; then
+            BASIC_ENV_STATUS="✅ **Basic Environment**: Setup Successful"
+          else
+            BASIC_ENV_STATUS="✅ **Basic Environment**: Setup Successful (Partial)"
           fi
           
           if [ "$LINUX_BUILD_RESULT" = "success" ]; then
@@ -237,23 +238,38 @@ jobs:
             WINDOWS_BUILD_STATUS="❓ **Windows Build**: Status Unknown"
           fi
           
-          if [ "$LINUX_ENV_RESULT" = "success" ] && [ "$WINDOWS_ENV_RESULT" = "success" ] && [ "$LINUX_BUILD_RESULT" = "success" ] && [ "$WINDOWS_BUILD_RESULT" = "success" ]; then
-            OVERALL_STATUS="🎉 **CI Overall Status: All Successful**"
-            STATUS_EMOJI="🎉"
-          elif [ "$LINUX_ENV_RESULT" != "success" ] || [ "$WINDOWS_ENV_RESULT" != "success" ]; then
-            OVERALL_STATUS="💥 **CI Overall Status: Basic Environment Failed**"
+          ENV_FAILED=false
+          if [ "$LINUX_ENV_RESULT" != "success" ] && [ "$LINUX_ENV_RESULT" != "skipped" ] || \
+             [ "$WINDOWS_ENV_RESULT" != "success" ] && [ "$WINDOWS_ENV_RESULT" != "skipped" ]; then
+            ENV_FAILED=true
+          fi
+
+          BUILD_FAILED=false
+          if [ "$LINUX_BUILD_RESULT" != "success" ] && [ "$LINUX_BUILD_RESULT" != "skipped" ] || \
+             [ "$WINDOWS_BUILD_RESULT" != "success" ] && [ "$WINDOWS_BUILD_RESULT" != "skipped" ]; then
+            BUILD_FAILED=true
+          fi
+
+          if [ "$ENV_FAILED" = "true" ]; then
+            OVERALL_STATUS="💥 **CI Overall Status: Environment Setup Failed**"
             STATUS_EMOJI="💥"
-          else
-            OVERALL_STATUS="⚠️ **CI Overall Status: Partially Failed**"
+          elif [ "$BUILD_FAILED" = "true" ]; then
+            OVERALL_STATUS="⚠️ **CI Overall Status: Build Failed**"
             STATUS_EMOJI="⚠️"
+          else
+            OVERALL_STATUS="🎉 **CI Overall Status: Successful**"
+            STATUS_EMOJI="🎉"
           fi
           
           CI_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           CURRENT_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
           
+          PR_HEAD_SHA="${{ github.event.client_payload.pr_head_sha }}"
+          SHORT_SHA="${PR_HEAD_SHA:0:7}"
+          
           COMMENT_BODY="$STATUS_EMOJI $OVERALL_STATUS
 
-          ## 📋 Detailed Results
+          ## 📋 Build Result for commit \`$SHORT_SHA\`
 
           ### 🔧 Stage Status
           $BASIC_ENV_STATUS
@@ -264,10 +280,14 @@ jobs:
           - 🔗 **Detailed Log**: [CI Execution Log #${{ github.run_number }}]($CI_URL)
           - ⏰ **Execution Time**: $CURRENT_TIME"
 
-          if [ "$LINUX_ENV_RESULT" != "success" ] || [ "$WINDOWS_ENV_RESULT" != "success" ]; then
+          if [ "$ENV_FAILED" = "true" ]; then
             COMMENT_BODY="$COMMENT_BODY
 
-          > ⚠️  **Note**: Some builds have been skipped due to environment setup failures. Please check the environment configuration and re-run CI."
+          > ⚠️  **Note**: Environment setup failed. Please check the configuration and logs for details."
+          elif [ "$BUILD_FAILED" = "true" ]; then
+            COMMENT_BODY="$COMMENT_BODY
+
+          > ⚠️  **Note**: Build process failed. Please check the build logs for details."
           fi
 
           echo "$COMMENT_BODY" | gh pr comment ${{ github.event.client_payload.pr_number }} --body-file -
