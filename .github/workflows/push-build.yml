@@ -6,11 +6,7 @@ on:
 
 jobs:
   Build:
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+    runs-on: linux-latest
 
     steps:
       - name: Checkout repository
@@ -23,47 +19,21 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Set Rust caching env vars only on non-release runs
-        if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-          echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
-          echo "RUST_LOG=debug" >> $GITHUB_ENV
-          echo "DUCKDB_BUILD_CACHE=1" >> $GITHUB_ENV
-        
-      # windows
-      - uses: robinraju/release-downloader@v1.4
-        name: Download duckdb
-        with:
-          repository: "duckdb/duckdb"
-          tag: "v1.3.2"
-          fileName: libduckdb-windows-amd64.zip
-          out-file-path: .
-
-      - name: Windows extract duckdb
-        if: matrix.os == 'windows-latest'
-        uses: DuckSoft/extract-7z-action@v1.0
-        with:
-          pathSource: D:\a\gds-data-ci\gds-data-ci\libduckdb-windows-amd64.zip
-          pathTarget: ${{ github.workspace }}/libduckdb
-
-      - name: Add path to PATH environment variable
-        if: matrix.os == 'windows-latest'
-        uses: myci-actions/export-env-var-powershell@1
-        with:
-          name: PATH
-          value: $env:PATH;${{ github.workspace }}/libduckdb
-
-      - name: Build gds data on windows
-        if: matrix.os == 'windows-latest'
-        run: cargo build
+      - name: Version update
+        run: | 
+          make bump-patch-with-sha
+          make install
         working-directory: src
-        env:
-          DUCKDB_LIB_DIR: ${{ github.workspace }}/libduckdb
-          DUCKDB_INCLUDE_DIR: ${{ github.workspace }}/libduckdb
-      
-      - name: Build gds data on linux
-        if: matrix.os == 'ubuntu-latest'
-        run: cargo build
+
+      - name: Git Operations
+        run: |
+          if git diff --quiet; then
+              echo "No changes to commit"
+              exit 0
+          fi
+
+          git add .
+          git commit -m "chore: update bin version [skip ci]"
+          git pull --rebase --autostash origin ${{ github.ref_name }}
+          git push
         working-directory: src
