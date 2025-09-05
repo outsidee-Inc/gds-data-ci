@@ -1,12 +1,13 @@
 name: Push Build
 
 on:
+  workflow_dispatch:
   repository_dispatch:
     types: [push-build]
 
 jobs:
   Build:
-    runs-on: linux-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
