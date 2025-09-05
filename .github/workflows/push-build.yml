@@ -20,6 +20,22 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup Rust build cache
+        uses: Swatinem/rust-cache@v2
+     
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Install dependencies
+        run: |
+          if ! command -v cargo-set-version >/dev/null 2>&1; then
+            echo "Installing cargo-edit..."
+            cargo install cargo-edit --locked
+          fi
+        working-directory: src
+        env:
+          RUSTC_WRAPPER: sccache
+
       - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
@@ -31,6 +47,8 @@ jobs:
           make bump-patch-with-sha
           make install
         working-directory: src
+        env:
+          RUSTC_WRAPPER: sccache
 
       - name: Git Operations
         run: |
