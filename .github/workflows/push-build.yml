@@ -5,6 +5,10 @@ on:
   repository_dispatch:
     types: [push-build]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.event.client_payload.ref || 'dispatch' }}
+  cancel-in-progress: true
+
 jobs:
   Build:
     runs-on: ubuntu-latest
