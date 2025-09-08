@@ -89,7 +89,7 @@ jobs:
           }
         
       # windows
-      - uses: robinraju/release-downloader@v1.4
+      - uses: robinraju/release-downloader@v1.12
         id: download-duckdb
         name: Download duckdb
         with:
