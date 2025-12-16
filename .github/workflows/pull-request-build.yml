@@ -26,7 +26,7 @@ jobs:
     steps:
       - name: Checkout repository
         id: checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: outsidee-Inc/gds-data
           token: ${{ secrets.GDS_DATA }}
@@ -193,7 +193,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: outsidee-Inc/gds-data
           token: ${{ secrets.GDS_DATA }}
