@@ -49,7 +49,7 @@ jobs:
       - name: Version update
         run: | 
           make bump-patch-with-sha
-          make install
+          # make install
         working-directory: src
         env:
           RUSTC_WRAPPER: sccache
