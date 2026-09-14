@@ -23,6 +23,10 @@ jobs:
   Test-Build:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    # Same `prod` environment as the excel pipeline: the DEV_*/PROD_* credentials
+    # are environment-scoped, so this job must declare the environment to read
+    # them (see push-excel-process.yml).
+    environment: prod
 
     env:
       DEV_MAIN_API_URL: ${{ secrets.DEV_MAIN_API_URL }}
@@ -39,7 +43,7 @@ jobs:
     steps:
       - name: Mint CI bot token
         id: bot-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ secrets.OUTSIDEE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.OUTSIDEE_BOT_PRIVATE_KEY }}
@@ -56,21 +60,23 @@ jobs:
             -f description="Test and build is running" -f target_url="$RUN_URL"
 
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: outsidee-Inc/gds-data
           token: ${{ steps.bot-token.outputs.token }}
           path: src
+          # This job never pushes; keep the App token out of src/.git/config.
+          persist-credentials: false
           ref: ${{ github.event.client_payload.sha || github.ref }}
           # tag builds need full history for git-cliff changelog
           fetch-depth: ${{ env.IS_TAG == 'true' && '0' || '1' }}
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable (master branch pin)
 
       - name: Run sccache-cache (non-release only)
         if: env.IS_TAG != 'true'
-        uses: mozilla-actions/sccache-action@v0.0.10
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
 
       - name: Set build env vars (non-release only)
         if: env.IS_TAG != 'true'
@@ -116,7 +122,7 @@ jobs:
 
       - name: Install git-cliff
         if: env.IS_TAG == 'true'
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2
         with:
           tool: git-cliff
 

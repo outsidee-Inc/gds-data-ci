@@ -12,34 +12,44 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-  RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-  LOGFIRE_TOKEN: ${{ secrets.LOGFIRE_TOKEN }}
-  GDS_DATA_ROOT: ${{ github.workspace }}/src
-  RUST_BACKTRACE: 1
-  CURRENT_ENV: prod
-  DEV_MAIN_API_URL: ${{ secrets.DEV_MAIN_API_URL }}
-  DEV_ACCESS_TOKEN_URL: ${{ secrets.DEV_ACCESS_TOKEN_URL }}
-  DEV_ACCESS_SECRET_ID: ${{ secrets.DEV_ACCESS_SECRET_ID }}
-  DEV_DB_NAME: dev
-  PROD_MAIN_API_URL: ${{ secrets.PROD_MAIN_API_URL }}
-  PROD_ACCESS_TOKEN_URL: ${{ secrets.PROD_ACCESS_TOKEN_URL }}
-  PROD_ACCESS_SECRET_ID: ${{ secrets.PROD_ACCESS_SECRET_ID }}
-  PROD_DB_NAME: prod
-  TRIGGER_SHA: ${{ github.event.client_payload.sha }}
-  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
 jobs:
   Excel-Process:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    # Production job: gate it behind the `prod` environment so that
+    # deployment branch policies and (optionally) required reviewers apply.
+    # Configure in Settings -> Environments -> prod:
+    #   - Deployment branches: "Protected branches only" / main
+    #   - Optionally required reviewers (NOTE: this pauses automation until approved)
+    #   - Environment secrets can then be moved here out of repo-level secrets
+    environment: prod
+
+    # Credentials now live in the `prod` environment, not at repo level, so only
+    # jobs that declare this environment can read them. Declared at job level on
+    # purpose: environment secrets do NOT resolve from a workflow-level `env`.
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      LOGFIRE_TOKEN: ${{ secrets.LOGFIRE_TOKEN }}
+      GDS_DATA_ROOT: ${{ github.workspace }}/src
+      RUST_BACKTRACE: 1
+      CURRENT_ENV: prod
+      DEV_MAIN_API_URL: ${{ secrets.DEV_MAIN_API_URL }}
+      DEV_ACCESS_TOKEN_URL: ${{ secrets.DEV_ACCESS_TOKEN_URL }}
+      DEV_ACCESS_SECRET_ID: ${{ secrets.DEV_ACCESS_SECRET_ID }}
+      DEV_DB_NAME: dev
+      PROD_MAIN_API_URL: ${{ secrets.PROD_MAIN_API_URL }}
+      PROD_ACCESS_TOKEN_URL: ${{ secrets.PROD_ACCESS_TOKEN_URL }}
+      PROD_ACCESS_SECRET_ID: ${{ secrets.PROD_ACCESS_SECRET_ID }}
+      PROD_DB_NAME: prod
+      TRIGGER_SHA: ${{ github.event.client_payload.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
     steps:
       - name: Mint CI bot token
         id: bot-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ secrets.OUTSIDEE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.OUTSIDEE_BOT_PRIVATE_KEY }}
@@ -59,7 +69,7 @@ jobs:
             -f target_url="$RUN_URL"
 
       - name: Checkout gds-data data directory
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: outsidee-Inc/gds-data
           token: ${{ steps.bot-token.outputs.token }}
@@ -80,7 +90,7 @@ jobs:
 
       - name: Restore gds-data binary
         id: binary-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: target/gds-data
           key: gds-data-bin-${{ steps.release.outputs.tag }}

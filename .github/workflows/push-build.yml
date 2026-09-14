@@ -24,7 +24,7 @@ jobs:
     steps:
       - name: Mint CI bot token
         id: bot-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ secrets.OUTSIDEE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.OUTSIDEE_BOT_PRIVATE_KEY }}
@@ -41,7 +41,7 @@ jobs:
             -f description="Push build is running" -f target_url="$RUN_URL"
 
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: outsidee-Inc/gds-data
           token: ${{ steps.bot-token.outputs.token }}
@@ -49,15 +49,15 @@ jobs:
           ref: ${{ github.event.client_payload.sha || github.ref }}
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable (master branch pin)
 
       - name: Setup Rust build cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: src
 
       - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.10
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
 
       - name: Set build env vars
         run: |
