@@ -1,0 +1,221 @@
+name: Push Excel Process
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [push-excel-process]
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+  LOGFIRE_TOKEN: ${{ secrets.LOGFIRE_TOKEN }}
+  GDS_DATA_ROOT: ${{ github.workspace }}/src
+  RUST_BACKTRACE: 1
+  CURRENT_ENV: prod
+  DEV_MAIN_API_URL: ${{ secrets.DEV_MAIN_API_URL }}
+  DEV_ACCESS_TOKEN_URL: ${{ secrets.DEV_ACCESS_TOKEN_URL }}
+  DEV_ACCESS_SECRET_ID: ${{ secrets.DEV_ACCESS_SECRET_ID }}
+  DEV_DB_NAME: dev
+  PROD_MAIN_API_URL: ${{ secrets.PROD_MAIN_API_URL }}
+  PROD_ACCESS_TOKEN_URL: ${{ secrets.PROD_ACCESS_TOKEN_URL }}
+  PROD_ACCESS_SECRET_ID: ${{ secrets.PROD_ACCESS_SECRET_ID }}
+  PROD_DB_NAME: prod
+  TRIGGER_SHA: ${{ github.event.client_payload.sha }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  Excel-Process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Mint CI bot token
+        id: bot-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.OUTSIDEE_BOT_APP_ID }}
+          private-key: ${{ secrets.OUTSIDEE_BOT_PRIVATE_KEY }}
+          owner: outsidee-Inc
+          repositories: gds-data
+
+      - name: Set commit status (pending)
+        if: env.TRIGGER_SHA != ''
+        env:
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
+        run: |
+          gh api -X POST "repos/outsidee-Inc/gds-data/statuses/$TRIGGER_SHA" \
+            -f state="pending" \
+            -f context="ci/excel-process" \
+            -f description="Excel data processing is running" \
+            -f target_url="$RUN_URL"
+
+      - name: Checkout gds-data repository
+        uses: actions/checkout@v7
+        with:
+          repository: outsidee-Inc/gds-data
+          token: ${{ steps.bot-token.outputs.token }}
+          path: src
+          ref: ${{ github.event.client_payload.sha || github.ref }}
+
+      - name: Download gds-data from Release
+        env:
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
+        run: |
+          mkdir -p ./target
+          gh release download --repo outsidee-Inc/gds-data --pattern "gds-data-linux-amd64" --dir ./target
+          mv ./target/gds-data-linux-amd64 ./target/gds-data
+          chmod +x ./target/gds-data
+
+      - name: Check bin Version
+        run: ./target/gds-data --version
+
+      - name: Reset Auth Token
+        run: |
+          # Suppress output; only show it if the step fails
+          if ! ./target/gds-data auth reset > auth_reset.log 2>&1; then
+            echo "::error::auth reset failed"
+            cat auth_reset.log
+            exit 1
+          fi
+          rm -f auth_reset.log
+
+      - name: First Upload All Data
+        continue-on-error: true
+        run: ./target/gds-data upload > /dev/null 2>&1
+
+      - name: Get Permission(1)
+        continue-on-error: true
+        run: ./target/gds-data brand > /dev/null 2>&1
+
+      - name: Upload All Data(1)
+        continue-on-error: true
+        run: ./target/gds-data upload > /dev/null 2>&1
+
+      - name: Get Permission(2)
+        continue-on-error: true
+        run: ./target/gds-data brand > /dev/null 2>&1
+
+      - name: Upload All Data(2)
+        continue-on-error: true
+        run: ./target/gds-data upload > /dev/null 2>&1
+
+      - name: Get Permission(3)
+        continue-on-error: true
+        run: ./target/gds-data brand > /dev/null 2>&1
+
+      - name: Upload All Data(3)
+        continue-on-error: true
+        run: ./target/gds-data upload > /dev/null 2>&1
+
+      - name: Get erruser data
+        id: get_erruser
+        working-directory: src
+        run: |
+          TEMP_DIR="temp_files"
+          mkdir -p "$TEMP_DIR"
+          TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
+          TEMP_FILE="${TEMP_DIR}/erruser_${TIMESTAMP}.txt"
+
+          # Two-stage capture: raw output stays off the CI log, then filtered.
+          # User data must NOT leak into this public repository's logs.
+          GDS_EXIT=0
+          ../target/gds-data errors > errors_raw.txt 2>&1 || GDS_EXIT=$?
+          grep -v '^\[' errors_raw.txt > "$TEMP_FILE" || true
+          rm -f errors_raw.txt
+
+          if [ "$GDS_EXIT" -ne 0 ]; then
+            echo "::error::Failed to get erruser data (exit $GDS_EXIT)"
+            exit 1
+          fi
+
+          if [ -s "$TEMP_FILE" ]; then
+            MAX_SIZE=$((50 * 1024 * 1024))
+            if [ $(stat -c%s "$TEMP_FILE") -gt $MAX_SIZE ]; then
+              echo "::warning::File size exceeds Telegram limit. Will be truncated."
+              head -c $MAX_SIZE "$TEMP_FILE" > "${TEMP_FILE}.tmp"
+              mv "${TEMP_FILE}.tmp" "$TEMP_FILE"
+              echo -e "\n... (truncated due to size limit)" >> "$TEMP_FILE"
+            fi
+            echo "temp_file=$TEMP_FILE" >> $GITHUB_OUTPUT
+            echo "has_output=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_output=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send Telegram notification
+        if: steps.get_erruser.outputs.has_output == 'true' && env.TELEGRAM_BOT_TOKEN != ''
+        run: |
+          if ! curl -s -X POST "https://api.telegram.org/bot${{ env.TELEGRAM_BOT_TOKEN }}/sendDocument" \
+            -F chat_id="${{ env.TELEGRAM_CHAT_ID }}" \
+            -F document=@"src/${{ steps.get_erruser.outputs.temp_file }}" \
+            -F caption="Erruser Report Generated: $(date '+%Y-%m-%d %H:%M:%S')" \
+            -w '%{http_code}' | grep -q '200'; then
+            echo "::warning::Failed to send file to Telegram"
+          fi
+
+      - name: Send Email via Resend
+        if: steps.get_erruser.outputs.has_output == 'true' && env.RESEND_API_KEY != ''
+        run: |
+          # Escape the file content for JSON
+          EMAIL_CONTENT=$(cat "src/${{ steps.get_erruser.outputs.temp_file }}" | jq -Rs .)
+
+          # Send email and capture the response
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST https://api.resend.com/emails \
+            -H "Authorization: Bearer $RESEND_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "from": "noreply@friendsa.cn",
+              "to": ["duanfei.name@gmail.com","770236387@qq.com"],
+              "subject": "Gds Excel Erruser Report Generated: '"$(date '+%Y-%m-%d %H:%M:%S')"'",
+              "text": '"$EMAIL_CONTENT"'
+            }')
+
+      - name: Cleanup temp files
+        if: always()
+        working-directory: src
+        run: |
+          if [ -d "temp_files" ]; then
+            rm -rf temp_files
+          fi
+
+      - name: Git Operations
+        working-directory: src
+        run: |
+          if git diff --quiet; then
+              echo "No changes to commit"
+              exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+          git add .
+          git commit -m "chore: update duckdb [skip ci]"
+          git pull --rebase --autostash origin main
+          git push origin HEAD:main
+
+      - name: Set commit status (final)
+        if: always() && env.TRIGGER_SHA != ''
+        env:
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            STATE="success"
+            DESC="Excel data processing succeeded"
+          else
+            STATE="failure"
+            DESC="Excel data processing failed"
+          fi
+          gh api -X POST "repos/outsidee-Inc/gds-data/statuses/$TRIGGER_SHA" \
+            -f state="$STATE" \
+            -f context="ci/excel-process" \
+            -f description="$DESC" \
+            -f target_url="$RUN_URL"
