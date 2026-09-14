@@ -289,27 +289,21 @@ jobs:
       - name: Comment PR with detailed results
         shell: bash
         run: |
-          LINUX_ENV="${{ needs.build.outputs.linux-env-result }}"
-          WINDOWS_ENV="${{ needs.build.outputs.windows-env-result }}"
-          LINUX_BUILD="${{ needs.build.outputs.linux-build-result }}"
-          WINDOWS_BUILD="${{ needs.build.outputs.windows-build-result }}"
+          HEAD_SHA="${{ github.event.client_payload.pr_head_sha }}"
+          STATUSES=$(gh api "repos/outsidee-Inc/gds-data/commits/$HEAD_SHA/status" --jq '.statuses[] | "\(.context) \(.state)"')
 
-          render_platform() {
-            env_r="$1"
-            build_r="$2"
-            if [ "$env_r" != "success" ]; then
-              echo "skipped (environment setup failed)"
-              return
-            fi
-            case "$build_r" in
+          normalize() {
+            case "$1" in
               success) echo "success" ;;
-              failure) echo "failed" ;;
+              failure | error) echo "failed" ;;
+              pending) echo "running" ;;
+              "") echo "skipped" ;;
               *) echo "unknown" ;;
             esac
           }
 
-          LINUX=$(render_platform "$LINUX_ENV" "$LINUX_BUILD")
-          WINDOWS=$(render_platform "$WINDOWS_ENV" "$WINDOWS_BUILD")
+          LINUX=$(normalize "$(echo "$STATUSES" | awk '$1 == "ci/build/linux" {print $2}')")
+          WINDOWS=$(normalize "$(echo "$STATUSES" | awk '$1 == "ci/build/windows" {print $2}')")
 
           if [ "$LINUX" = "success" ] && [ "$WINDOWS" = "success" ]; then
             VERDICT="Success"
@@ -320,8 +314,7 @@ jobs:
           fi
 
           CI_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          PR_HEAD_SHA="${{ github.event.client_payload.pr_head_sha }}"
-          SHORT_SHA="${PR_HEAD_SHA:0:7}"
+          SHORT_SHA="${HEAD_SHA:0:7}"
           FINISHED=$(date -u '+%Y-%m-%d %H:%M UTC')
 
           COMMENT_BODY="## External CI: $VERDICT
