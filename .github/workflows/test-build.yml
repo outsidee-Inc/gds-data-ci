@@ -41,7 +41,7 @@ jobs:
         id: bot-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.OUTSIDEE_BOT_APP_ID }}
+          client-id: ${{ secrets.OUTSIDEE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.OUTSIDEE_BOT_PRIVATE_KEY }}
           owner: outsidee-Inc
           repositories: gds-data
