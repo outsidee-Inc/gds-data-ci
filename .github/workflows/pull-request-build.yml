@@ -29,12 +29,21 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
+      - name: Mint CI bot token
+        id: bot-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.OUTSIDEE_BOT_APP_ID }}
+          private-key: ${{ secrets.OUTSIDEE_BOT_PRIVATE_KEY }}
+          owner: outsidee-Inc
+          repositories: gds-data
+
       - name: Checkout repository
         id: checkout
         uses: actions/checkout@v7
         with:
           repository: outsidee-Inc/gds-data
-          token: ${{ secrets.GDS_DATA }}
+          token: ${{ steps.bot-token.outputs.token }}
           path: src
           # Build the actual PR code, not the default branch
           ref: ${{ github.event.client_payload.pr_head_sha }}
@@ -48,7 +57,7 @@ jobs:
       - name: Set Linux commit status (pending)
         if: matrix.os == 'ubuntu-latest' && env.HEAD_SHA != ''
         env:
-          GH_TOKEN: ${{ secrets.GDS_DATA }}
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
         run: |
           gh api -X POST "repos/outsidee-Inc/gds-data/statuses/$HEAD_SHA" \
             -f state="pending" -f context="ci/build/linux" \
@@ -57,7 +66,7 @@ jobs:
       - name: Set Windows commit status (pending)
         if: matrix.os == 'windows-latest' && env.HEAD_SHA != ''
         env:
-          GH_TOKEN: ${{ secrets.GDS_DATA }}
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
         run: |
           gh api -X POST "repos/outsidee-Inc/gds-data/statuses/$HEAD_SHA" \
             -f state="pending" -f context="ci/build/windows" \
@@ -219,7 +228,7 @@ jobs:
       - name: Set Linux commit status (final)
         if: always() && matrix.os == 'ubuntu-latest' && env.HEAD_SHA != ''
         env:
-          GH_TOKEN: ${{ secrets.GDS_DATA }}
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
         run: |
           RESULT="${{ steps.set-linux-result.outputs.result }}"
           case "$RESULT" in
@@ -234,7 +243,7 @@ jobs:
       - name: Set Windows commit status (final)
         if: always() && matrix.os == 'windows-latest' && env.HEAD_SHA != ''
         env:
-          GH_TOKEN: ${{ secrets.GDS_DATA }}
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
         run: |
           RESULT="${{ steps.set-windows-result.outputs.result }}"
           case "$RESULT" in
@@ -256,11 +265,20 @@ jobs:
       pull-requests: write
 
     steps:
+      - name: Mint CI bot token
+        id: bot-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.OUTSIDEE_BOT_APP_ID }}
+          private-key: ${{ secrets.OUTSIDEE_BOT_PRIVATE_KEY }}
+          owner: outsidee-Inc
+          repositories: gds-data
+
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
           repository: outsidee-Inc/gds-data
-          token: ${{ secrets.GDS_DATA }}
+          token: ${{ steps.bot-token.outputs.token }}
           path: src
 
       - name: Comment PR with detailed results
@@ -361,4 +379,4 @@ jobs:
           echo "$COMMENT_BODY" | gh pr comment ${{ github.event.client_payload.pr_number }} --body-file -
         working-directory: src
         env:
-          GH_TOKEN: ${{ secrets.GDS_DATA }}
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}

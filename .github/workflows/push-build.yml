@@ -22,10 +22,19 @@ jobs:
     timeout-minutes: 90
 
     steps:
+      - name: Mint CI bot token
+        id: bot-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.OUTSIDEE_BOT_APP_ID }}
+          private-key: ${{ secrets.OUTSIDEE_BOT_PRIVATE_KEY }}
+          owner: outsidee-Inc
+          repositories: gds-data
+
       - name: Set commit status (pending)
         if: env.TRIGGER_SHA != ''
         env:
-          GH_TOKEN: ${{ secrets.GDS_DATA }}
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
         run: |
           gh api -X POST "repos/outsidee-Inc/gds-data/statuses/$TRIGGER_SHA" \
             -f state="pending" -f context="ci/push-build" \
@@ -35,7 +44,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: outsidee-Inc/gds-data
-          token: ${{ secrets.GDS_DATA }}
+          token: ${{ steps.bot-token.outputs.token }}
           path: src
           ref: ${{ github.event.client_payload.sha || github.ref }}
 
@@ -104,7 +113,7 @@ jobs:
       - name: Set commit status (final)
         if: always() && env.TRIGGER_SHA != ''
         env:
-          GH_TOKEN: ${{ secrets.GDS_DATA }}
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
         run: |
           if [ "${{ job.status }}" = "success" ]; then
             STATE="success"
