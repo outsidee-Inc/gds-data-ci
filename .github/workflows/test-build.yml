@@ -73,6 +73,10 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable (master branch pin)
+        # The action infers the toolchain from its ref (e.g. @stable); a raw SHA
+        # pin removes that, so the input has to be given explicitly.
+        with:
+          toolchain: stable
 
       - name: Run sccache-cache (non-release only)
         if: env.IS_TAG != 'true'
