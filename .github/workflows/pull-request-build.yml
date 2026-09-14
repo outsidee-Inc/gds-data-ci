@@ -260,6 +260,16 @@ jobs:
             -f state="$STATE" -f context="ci/build/windows" \
             -f description="$DESC" -f target_url="$RUN_URL"
 
+      - name: Notify PR of leg failure
+        if: failure() && github.event.client_payload.pr_number != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
+          LEG: ${{ matrix.os }}
+        run: |
+          gh pr comment "${{ github.event.client_payload.pr_number }}" --repo outsidee-Inc/gds-data \
+            --body "External CI: **$LEG** leg failed for commit \`${HEAD_SHA:0:7}\` - [run #${{ github.run_number }}]($RUN_URL)"
+
   Comment:
     needs: Build
     runs-on: ubuntu-latest
@@ -336,15 +346,3 @@ jobs:
           fi
 
           echo "$COMMENT_BODY" | gh pr comment ${{ github.event.client_payload.pr_number }} --body-file -
-
-      - name: Notify non-success (telegram)
-        if: needs.Build.result != 'success' && env.TELEGRAM_BOT_TOKEN != ''
-        shell: bash
-        run: |
-          TEXT="gds-data PR CI: linux=${{ needs.build.outputs.linux-build-result }} windows=${{ needs.build.outputs.windows-build-result }} (PR #${{ github.event.client_payload.pr_number }}). $RUN_URL"
-          curl -s -o /dev/null -w '%{http_code}' -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -F text="$TEXT"
-        working-directory: src
-        env:
-          GH_TOKEN: ${{ steps.bot-token.outputs.token }}

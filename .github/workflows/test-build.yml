@@ -25,8 +25,6 @@ jobs:
     timeout-minutes: 120
 
     env:
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       DEV_MAIN_API_URL: ${{ secrets.DEV_MAIN_API_URL }}
       DEV_ACCESS_TOKEN_URL: ${{ secrets.DEV_ACCESS_TOKEN_URL }}
       DEV_ACCESS_SECRET_ID: ${{ secrets.DEV_ACCESS_SECRET_ID }}

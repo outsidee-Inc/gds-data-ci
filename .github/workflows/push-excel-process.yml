@@ -236,15 +236,6 @@ jobs:
           git commit -m "chore: update duckdb [skip ci]" -m "Data sync run: $RUN_URL"
           git push origin HEAD:main
 
-      - name: Notify failure (telegram)
-        if: failure() && env.TELEGRAM_BOT_TOKEN != ''
-        shell: bash
-        run: |
-          TEXT="gds-data CI failed: excel-process (uploads ${{ steps.rounds.outputs.uploads_ok || 0 }}/3). $RUN_URL"
-          curl -s -o /dev/null -w '%{http_code}' -X POST "https://api.telegram.org/bot${{ env.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -F chat_id="${{ env.TELEGRAM_CHAT_ID }}" \
-            -F text="$TEXT"
-
       - name: Set commit status (final)
         if: always() && env.TRIGGER_SHA != ''
         shell: bash
