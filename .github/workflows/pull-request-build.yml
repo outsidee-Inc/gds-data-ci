@@ -187,22 +187,30 @@ jobs:
         working-directory: src
         continue-on-error: true
 
+      - name: Test gds data on linux
+        id: test-linux
+        if: matrix.os == 'ubuntu-latest' && steps.set-basic-env-result-linux.outputs.result == 'success'
+        run: cargo test
+        working-directory: src
+        continue-on-error: true
+
       - name: Set Linux build result
         id: set-linux-result
         if: always() && matrix.os == 'ubuntu-latest'
         run: |
           BASIC_ENV_RESULT="${{ steps.set-basic-env-result-linux.outputs.result }}"
           BUILD_RESULT="${{ steps.build-linux.outcome }}"
-          
+          TEST_RESULT="${{ steps.test-linux.outcome }}"
+
           if [ "$BASIC_ENV_RESULT" != "success" ]; then
             echo "result=skipped" >> $GITHUB_OUTPUT
             echo "Linux build skipped due to basic environment failure"
-          elif [ "$BUILD_RESULT" = "success" ]; then
+          elif [ "$BUILD_RESULT" = "success" ] && [ "$TEST_RESULT" = "success" ]; then
             echo "result=success" >> $GITHUB_OUTPUT
-            echo "Linux build completed successfully"
-          elif [ "$BUILD_RESULT" = "failure" ]; then
+            echo "Linux build and tests completed successfully"
+          elif [ "$BUILD_RESULT" = "failure" ] || [ "$TEST_RESULT" = "failure" ]; then
             echo "result=failure" >> $GITHUB_OUTPUT
-            echo "Linux build failed"
+            echo "Linux build or tests failed"
           else
             echo "result=unknown" >> $GITHUB_OUTPUT
             echo "Linux build status unknown"
