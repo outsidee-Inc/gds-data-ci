@@ -1,0 +1,46 @@
+# One-time diagnostic: verify what the GDS_DATA secret can still access.
+# Delete this file after diagnosis.
+name: Diagnose GDS_DATA Token
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GDS_DATA }}
+      GDS_DATA: ${{ secrets.GDS_DATA }}
+    steps:
+      - name: Token identity (API)
+        run: |
+          echo "== whoami =="
+          gh api /user --jq '{login: .login, type: .type}' && echo "API auth: OK" || echo "::notice::API auth FAILED (401 = token invalid/expired/revoked)"
+
+      - name: Access to private repo gds-data (API)
+        run: |
+          echo "== repos/outsidee-Inc/gds-data =="
+          gh api repos/outsidee-Inc/gds-data --jq '{full_name, permissions}' && echo "gds-data API access: OK" || echo "::notice::gds-data API access FAILED"
+
+      - name: Access to gds-data-ci (API)
+        run: |
+          echo "== repos/outsidee-Inc/gds-data-ci =="
+          gh api repos/outsidee-Inc/gds-data-ci --jq '{full_name, permissions}' && echo "gds-data-ci API access: OK" || echo "::notice::gds-data-ci API access FAILED"
+
+      - name: Git-over-HTTPS fetch of gds-data (the failing path)
+        run: |
+          echo "== git ls-remote =="
+          if git ls-remote https://x-access-token:"$GDS_DATA"@github.com/outsidee-Inc/gds-data.git HEAD 2>&1; then
+            echo "git HTTPS auth: OK"
+          else
+            echo "::notice::git HTTPS auth FAILED (this is exactly what checkout does)"
+          fi
+
+      - name: Org membership / SSO check
+        run: |
+          echo "== org =="
+          gh api user/memberships/orgs/outsidee-Inc --jq '{state, role}' 2>/dev/null && echo "org membership via token: OK" || echo "::notice::cannot read org membership (possible SAML SSO deauthorization)"
