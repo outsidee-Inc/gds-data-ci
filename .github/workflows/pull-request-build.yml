@@ -289,96 +289,57 @@ jobs:
       - name: Comment PR with detailed results
         shell: bash
         run: |
-          LINUX_ENV_RESULT="${{ needs.build.outputs.linux-env-result }}"
-          WINDOWS_ENV_RESULT="${{ needs.build.outputs.windows-env-result }}"
-          LINUX_BUILD_RESULT="${{ needs.build.outputs.linux-build-result }}"
-          WINDOWS_BUILD_RESULT="${{ needs.build.outputs.windows-build-result }}"
-          
-          echo "Linux Env: $LINUX_ENV_RESULT"
-          echo "Windows Env: $WINDOWS_ENV_RESULT"
-          echo "Linux Build: $LINUX_BUILD_RESULT"
-          echo "Windows Build: $WINDOWS_BUILD_RESULT"
-          
-          # Determine overall environment status
-          if [ "$LINUX_ENV_RESULT" != "success" ] && [ "$LINUX_ENV_RESULT" != "skipped" ] || \
-             [ "$WINDOWS_ENV_RESULT" != "success" ] && [ "$WINDOWS_ENV_RESULT" != "skipped" ]; then
-            BASIC_ENV_STATUS="❌ **Basic Environment**: Setup Failed"
-          elif [ "$LINUX_ENV_RESULT" = "success" ] && [ "$WINDOWS_ENV_RESULT" = "success" ]; then
-            BASIC_ENV_STATUS="✅ **Basic Environment**: Setup Successful"
+          LINUX_ENV="${{ needs.build.outputs.linux-env-result }}"
+          WINDOWS_ENV="${{ needs.build.outputs.windows-env-result }}"
+          LINUX_BUILD="${{ needs.build.outputs.linux-build-result }}"
+          WINDOWS_BUILD="${{ needs.build.outputs.windows-build-result }}"
+
+          render_platform() {
+            env_r="$1"
+            build_r="$2"
+            if [ "$env_r" != "success" ]; then
+              echo "skipped (environment setup failed)"
+              return
+            fi
+            case "$build_r" in
+              success) echo "success" ;;
+              failure) echo "failed" ;;
+              *) echo "unknown" ;;
+            esac
+          }
+
+          LINUX=$(render_platform "$LINUX_ENV" "$LINUX_BUILD")
+          WINDOWS=$(render_platform "$WINDOWS_ENV" "$WINDOWS_BUILD")
+
+          if [ "$LINUX" = "success" ] && [ "$WINDOWS" = "success" ]; then
+            VERDICT="Success"
+          elif [ "$LINUX" = "success" ] || [ "$WINDOWS" = "success" ]; then
+            VERDICT="Partial"
           else
-            BASIC_ENV_STATUS="✅ **Basic Environment**: Setup Successful (Partial)"
-          fi
-          
-          if [ "$LINUX_BUILD_RESULT" = "success" ]; then
-            LINUX_BUILD_STATUS="✅ **Linux Build**: Build Successful"
-          elif [ "$LINUX_BUILD_RESULT" = "failure" ]; then
-            LINUX_BUILD_STATUS="❌ **Linux Build**: Build Failed"
-          elif [ "$LINUX_BUILD_RESULT" = "skipped" ]; then
-            LINUX_BUILD_STATUS="⏭️ **Linux Build**: Build Skipped (Basic Environment Failed)"
-          else
-            LINUX_BUILD_STATUS="❓ **Linux Build**: Status Unknown"
-          fi
-          
-          if [ "$WINDOWS_BUILD_RESULT" = "success" ]; then
-            WINDOWS_BUILD_STATUS="✅ **Windows Build**: Build Successful"
-          elif [ "$WINDOWS_BUILD_RESULT" = "failure" ]; then
-            WINDOWS_BUILD_STATUS="❌ **Windows Build**: Build Failed"
-          elif [ "$WINDOWS_BUILD_RESULT" = "skipped" ]; then
-            WINDOWS_BUILD_STATUS="⏭️ **Windows Build**: Build Skipped (Basic Environment Failed)"
-          else
-            WINDOWS_BUILD_STATUS="❓ **Windows Build**: Status Unknown"
-          fi
-          
-          ENV_FAILED=false
-          if [ "$LINUX_ENV_RESULT" != "success" ] && [ "$LINUX_ENV_RESULT" != "skipped" ] || \
-             [ "$WINDOWS_ENV_RESULT" != "success" ] && [ "$WINDOWS_ENV_RESULT" != "skipped" ]; then
-            ENV_FAILED=true
+            VERDICT="Failed"
           fi
 
-          BUILD_FAILED=false
-          if [ "$LINUX_BUILD_RESULT" != "success" ] && [ "$LINUX_BUILD_RESULT" != "skipped" ] || \
-             [ "$WINDOWS_BUILD_RESULT" != "success" ] && [ "$WINDOWS_BUILD_RESULT" != "skipped" ]; then
-            BUILD_FAILED=true
-          fi
-
-          if [ "$ENV_FAILED" = "true" ]; then
-            OVERALL_STATUS="💥 **CI Overall Status: Environment Setup Failed**"
-            STATUS_EMOJI="💥"
-          elif [ "$BUILD_FAILED" = "true" ]; then
-            OVERALL_STATUS="⚠️ **CI Overall Status: Build Failed**"
-            STATUS_EMOJI="⚠️"
-          else
-            OVERALL_STATUS="🎉 **CI Overall Status: Successful**"
-            STATUS_EMOJI="🎉"
-          fi
-          
           CI_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          CURRENT_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          
           PR_HEAD_SHA="${{ github.event.client_payload.pr_head_sha }}"
           SHORT_SHA="${PR_HEAD_SHA:0:7}"
-          
-          COMMENT_BODY="$STATUS_EMOJI $OVERALL_STATUS
+          FINISHED=$(date -u '+%Y-%m-%d %H:%M UTC')
 
-          ## 📋 Build Result for commit \`$SHORT_SHA\`
+          COMMENT_BODY="## External CI: $VERDICT
 
-          ### 🔧 Stage Status
-          $BASIC_ENV_STATUS
-          $LINUX_BUILD_STATUS  
-          $WINDOWS_BUILD_STATUS
+          Commit: \`$SHORT_SHA\`
 
-          ### 📊 Execution Information
-          - 🔗 **Detailed Log**: [CI Execution Log #${{ github.run_number }}]($CI_URL)
-          - ⏰ **Execution Time**: $CURRENT_TIME"
+          | Check | Result |
+          | --- | --- |
+          | Linux build + test | $LINUX |
+          | Windows build | $WINDOWS |
 
-          if [ "$ENV_FAILED" = "true" ]; then
+          Log: [run #${{ github.run_number }}]($CI_URL)
+          Finished: $FINISHED"
+
+          if [ "$VERDICT" != "Success" ]; then
             COMMENT_BODY="$COMMENT_BODY
 
-          > ⚠️  **Note**: Environment setup failed. Please check the configuration and logs for details."
-          elif [ "$BUILD_FAILED" = "true" ]; then
-            COMMENT_BODY="$COMMENT_BODY
-
-          > ⚠️  **Note**: Build process failed. Please check the build logs for details."
+          A non-success row means that stage did not complete. Open the log link and inspect the failing job; skipped (environment setup failed) means checkout or toolchain setup failed before the build."
           fi
 
           echo "$COMMENT_BODY" | gh pr comment ${{ github.event.client_payload.pr_number }} --body-file -
