@@ -8,10 +8,15 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.client_payload.pr_number || github.event.client_payload.pr_ref || github.run_id }}
   cancel-in-progress: true
+
+env:
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  HEAD_SHA: ${{ github.event.client_payload.pr_head_sha }}
   
 jobs:
   Build:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
 
     outputs:
       linux-env-result: ${{ matrix.os == 'ubuntu-latest' && steps.set-basic-env-result-linux.outputs.result || 'skipped' }}
@@ -31,12 +36,32 @@ jobs:
           repository: outsidee-Inc/gds-data
           token: ${{ secrets.GDS_DATA }}
           path: src
+          # Build the actual PR code, not the default branch
+          ref: ${{ github.event.client_payload.pr_head_sha }}
         continue-on-error: true
       
       - name: Install Rust
         id: install-rust
         uses: dtolnay/rust-toolchain@stable
         continue-on-error: true
+
+      - name: Set Linux commit status (pending)
+        if: matrix.os == 'ubuntu-latest' && env.HEAD_SHA != ''
+        env:
+          GH_TOKEN: ${{ secrets.GDS_DATA }}
+        run: |
+          gh api -X POST "repos/outsidee-Inc/gds-data/statuses/$HEAD_SHA" \
+            -f state="pending" -f context="ci/build/linux" \
+            -f description="Linux build is running" -f target_url="$RUN_URL"
+
+      - name: Set Windows commit status (pending)
+        if: matrix.os == 'windows-latest' && env.HEAD_SHA != ''
+        env:
+          GH_TOKEN: ${{ secrets.GDS_DATA }}
+        run: |
+          gh api -X POST "repos/outsidee-Inc/gds-data/statuses/$HEAD_SHA" \
+            -f state="pending" -f context="ci/build/windows" \
+            -f description="Windows build is running" -f target_url="$RUN_URL"
 
       - name: Set build env vars
         id: set-cache-env
@@ -183,10 +208,41 @@ jobs:
             echo "Linux build status unknown"
           fi
 
+      - name: Set Linux commit status (final)
+        if: always() && matrix.os == 'ubuntu-latest' && env.HEAD_SHA != ''
+        env:
+          GH_TOKEN: ${{ secrets.GDS_DATA }}
+        run: |
+          RESULT="${{ steps.set-linux-result.outputs.result }}"
+          case "$RESULT" in
+            success) STATE="success"; DESC="Linux build succeeded" ;;
+            failure) STATE="failure"; DESC="Linux build failed" ;;
+            *)       STATE="failure"; DESC="Linux build skipped or unknown" ;;
+          esac
+          gh api -X POST "repos/outsidee-Inc/gds-data/statuses/$HEAD_SHA" \
+            -f state="$STATE" -f context="ci/build/linux" \
+            -f description="$DESC" -f target_url="$RUN_URL"
+
+      - name: Set Windows commit status (final)
+        if: always() && matrix.os == 'windows-latest' && env.HEAD_SHA != ''
+        env:
+          GH_TOKEN: ${{ secrets.GDS_DATA }}
+        run: |
+          RESULT="${{ steps.set-windows-result.outputs.result }}"
+          case "$RESULT" in
+            success) STATE="success"; DESC="Windows build succeeded" ;;
+            failure) STATE="failure"; DESC="Windows build failed" ;;
+            *)       STATE="failure"; DESC="Windows build skipped or unknown" ;;
+          esac
+          gh api -X POST "repos/outsidee-Inc/gds-data/statuses/$HEAD_SHA" \
+            -f state="$STATE" -f context="ci/build/windows" \
+            -f description="$DESC" -f target_url="$RUN_URL"
+
   Comment:
     needs: Build
     runs-on: ubuntu-latest
     if: always()
+    timeout-minutes: 10
 
     permissions:
       pull-requests: write
