@@ -25,6 +25,7 @@ jobs:
       windows-build-result: ${{ steps.set-windows-result.outputs.result }}
 
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
 
@@ -56,6 +57,7 @@ jobs:
 
       - name: Set Linux commit status (pending)
         if: matrix.os == 'ubuntu-latest' && env.HEAD_SHA != ''
+        shell: bash
         env:
           GH_TOKEN: ${{ steps.bot-token.outputs.token }}
         run: |
@@ -65,6 +67,7 @@ jobs:
 
       - name: Set Windows commit status (pending)
         if: matrix.os == 'windows-latest' && env.HEAD_SHA != ''
+        shell: bash
         env:
           GH_TOKEN: ${{ steps.bot-token.outputs.token }}
         run: |
@@ -227,6 +230,7 @@ jobs:
 
       - name: Set Linux commit status (final)
         if: always() && matrix.os == 'ubuntu-latest' && env.HEAD_SHA != ''
+        shell: bash
         env:
           GH_TOKEN: ${{ steps.bot-token.outputs.token }}
         run: |
@@ -242,6 +246,7 @@ jobs:
 
       - name: Set Windows commit status (final)
         if: always() && matrix.os == 'windows-latest' && env.HEAD_SHA != ''
+        shell: bash
         env:
           GH_TOKEN: ${{ steps.bot-token.outputs.token }}
         run: |
