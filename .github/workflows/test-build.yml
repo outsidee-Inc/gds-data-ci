@@ -70,7 +70,7 @@ jobs:
 
       - name: Run sccache-cache (non-release only)
         if: env.IS_TAG != 'true'
-        uses: mozilla-actions/sccache-action@v0.0.10
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Set build env vars (non-release only)
         if: env.IS_TAG != 'true'
