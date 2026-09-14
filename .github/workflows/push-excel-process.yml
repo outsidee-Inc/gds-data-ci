@@ -223,6 +223,7 @@ jobs:
           # the latest main instead of rebasing a binary blob (which can
           # never auto-merge).
           cp data/db/prod.duckdb "$RUNNER_TEMP/prod.duckdb"
+          git checkout -- data/db/prod.duckdb
           git fetch origin main
           git checkout -B main origin/main
           cp "$RUNNER_TEMP/prod.duckdb" data/db/prod.duckdb
