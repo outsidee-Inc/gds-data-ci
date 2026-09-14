@@ -6,29 +6,68 @@ on:
     types: [push-build]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref || github.event.client_payload.ref || 'dispatch' }}
+  group: ${{ github.workflow }}-${{ github.event.client_payload.sha || github.run_id }}
   cancel-in-progress: true
+
+env:
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  TRIGGER_SHA: ${{ github.event.client_payload.sha }}
+
+permissions:
+  contents: read
 
 jobs:
   Build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
 
     steps:
+      - name: Set commit status (pending)
+        if: env.TRIGGER_SHA != ''
+        env:
+          GH_TOKEN: ${{ secrets.GDS_DATA }}
+        run: |
+          gh api -X POST "repos/outsidee-Inc/gds-data/statuses/$TRIGGER_SHA" \
+            -f state="pending" -f context="ci/push-build" \
+            -f description="Push build is running" -f target_url="$RUN_URL"
+
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
           repository: outsidee-Inc/gds-data
           token: ${{ secrets.GDS_DATA }}
           path: src
-      
+          ref: ${{ github.event.client_payload.sha || github.ref }}
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Setup Rust build cache
         uses: Swatinem/rust-cache@v2
-     
+        with:
+          workspaces: src
+
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Set build env vars
+        run: |
+          echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo "DUCKDB_BUILD_CACHE=1" >> $GITHUB_ENV
+          echo "CARGO_BUILD_JOBS=$(nproc)" >> $GITHUB_ENV
+
+      - name: Build
+        run: cargo build --verbose
+        working-directory: src
+        env:
+          RUST_BACKTRACE: 1
+
+      - name: Test
+        run: cargo test --verbose
+        working-directory: src
+        env:
+          RUST_BACKTRACE: 1
 
       - name: Install dependencies
         run: |
@@ -37,8 +76,6 @@ jobs:
             cargo install cargo-edit --locked
           fi
         working-directory: src
-        env:
-          RUSTC_WRAPPER: sccache
 
       - name: Configure Git
         run: |
@@ -47,12 +84,8 @@ jobs:
         working-directory: src
 
       - name: Version update
-        run: | 
-          make bump-patch-with-sha
-          # make install
+        run: make bump-patch-with-sha
         working-directory: src
-        env:
-          RUSTC_WRAPPER: sccache
 
       - name: Git Operations
         run: |
@@ -63,7 +96,23 @@ jobs:
 
           git add .
           git commit -m "chore: update bin version [skip ci]"
-          
-          git remote set-url origin https://x-access-token:${{ secrets.GDS_DATA }}@github.com/outsidee-Inc/gds-data.git
+
+          git pull --rebase --autostash origin main
           git push origin HEAD:main
         working-directory: src
+
+      - name: Set commit status (final)
+        if: always() && env.TRIGGER_SHA != ''
+        env:
+          GH_TOKEN: ${{ secrets.GDS_DATA }}
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            STATE="success"
+            DESC="Push build and tests succeeded"
+          else
+            STATE="failure"
+            DESC="Push build or tests failed"
+          fi
+          gh api -X POST "repos/outsidee-Inc/gds-data/statuses/$TRIGGER_SHA" \
+            -f state="$STATE" -f context="ci/push-build" \
+            -f description="$DESC" -f target_url="$RUN_URL"
