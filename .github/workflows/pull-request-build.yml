@@ -278,6 +278,7 @@ jobs:
 
     permissions:
       pull-requests: write
+      actions: read
 
     steps:
       - name: Mint CI bot token
@@ -296,8 +297,31 @@ jobs:
           token: ${{ steps.bot-token.outputs.token }}
           path: src
 
+      - name: Extract failure log excerpt
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          : > excerpt_raw.txt
+          JOB_IDS=$(gh run view "${{ github.run_id }}" --json jobs \
+            --jq '[.jobs[] | select(.name | startswith("Build"))] | sort_by(.name != "Build (ubuntu-latest)") | .[].databaseId') || JOB_IDS=""
+          for JOB_ID in $JOB_IDS; do
+            gh run view --job "$JOB_ID" --log 2>/dev/null \
+              | sed -E 's/\^\[\[[0-9;]*[mK]//g; s/\x1b\[[0-9;]*[mK]//g; s/^[^\t]*\t[^\t]*\t[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z //' \
+              | grep -B 3 -A 17 -E 'error(\[E[0-9]+\])?:|panicked|^failures:|test result: FAILED' \
+              >> excerpt_raw.txt || true
+          done
+          head -n 21 excerpt_raw.txt > failure-excerpt.txt
+          if [ ! -s failure-excerpt.txt ]; then
+            echo "(no error lines captured - see full log)" > failure-excerpt.txt
+          fi
+
       - name: Comment PR with detailed results
         shell: bash
+        env:
+          GH_TOKEN: ${{ steps.bot-token.outputs.token }}
+          GH_REPO: outsidee-Inc/gds-data
         run: |
           HEAD_SHA="${{ github.event.client_payload.pr_head_sha }}"
           STATUSES=$(gh api "repos/outsidee-Inc/gds-data/commits/$HEAD_SHA/status" --jq '.statuses[] | "\(.context) \(.state)"')
@@ -342,7 +366,15 @@ jobs:
           if [ "$VERDICT" != "Success" ]; then
             COMMENT_BODY="$COMMENT_BODY
 
-          A non-success row means that stage did not complete. Open the log link and inspect the failing job; skipped (environment setup failed) means checkout or toolchain setup failed before the build."
+          <details><summary>Failure log excerpt (~20 lines around the first error)</summary>
+
+          \`\`\`text
+          $(cat failure-excerpt.txt)
+          \`\`\`
+
+          </details>
+
+          A non-success row means that stage did not complete. Open the log link for the full output; skipped (environment setup failed) means checkout or toolchain setup failed before the build."
           fi
 
           echo "$COMMENT_BODY" | gh pr comment ${{ github.event.client_payload.pr_number }} --body-file -
